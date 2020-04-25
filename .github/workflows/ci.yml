@@ -19,12 +19,10 @@
 ---
 name: CI Build
 on:
-  schedule:
-    - cron: '10 2 * * *'
   push:
-    branches: ['master', 'v1-10-test', 'v1-10-stable']
+    branches: ['master', 'v1-10-test']
   pull_request:
-    branches: ['master', 'v1-10-test', 'v1-10-stable']
+    branches: ['master', 'v1-10-test']
 env:
   MOUNT_LOCAL_SOURCES: "false"
   FORCE_ANSWER_TO_QUESTIONS: "yes"
@@ -41,7 +39,7 @@ env:
 jobs:
 
   static-checks-1:
-    timeout-minutes: 30
+    timeout-minutes: 60
     name: "Checks: some checks"
     runs-on: ubuntu-latest
     env:
@@ -71,7 +69,7 @@ jobs:
           ./scripts/ci/ci_run_static_checks.sh pylint-tests mypy yamllint flake8
 
   static-checks-2:
-    timeout-minutes: 30
+    timeout-minutes: 60
     name: "Checks: all other"
     runs-on: ubuntu-latest
     env:
@@ -101,7 +99,7 @@ jobs:
           ./scripts/ci/ci_run_static_checks.sh
 
   docs:
-    timeout-minutes: 30
+    timeout-minutes: 60
     name: Build docs
     runs-on: ubuntu-latest
     env:
@@ -114,7 +112,7 @@ jobs:
         run: ./scripts/ci/ci_docs.sh
 
   build-prod-image:
-    timeout-minutes: 20
+    timeout-minutes: 60
     name: "Build prod image Py${{ matrix.python-version }}"
     runs-on: ubuntu-latest
     strategy:
@@ -144,7 +142,7 @@ jobs:
         id: pyfiles
 
   tests-postgres:
-    timeout-minutes: 60
+    timeout-minutes: 80
     name: "${{matrix.test-type}}:Pg${{matrix.postgres-version}},Py${{matrix.python-version}}"
     runs-on: ubuntu-latest
     needs: [static-checks-1, static-checks-2, pyfiles]
@@ -176,7 +174,7 @@ jobs:
         run: ./scripts/ci/ci_run_airflow_testing.sh
 
   tests-mysql:
-    timeout-minutes: 60
+    timeout-minutes: 80
     name: "${{matrix.test-type}}:MySQL${{matrix.mysql-version}}, Py${{matrix.python-version}}"
     runs-on: ubuntu-latest
     needs: [static-checks-1, static-checks-2, pyfiles]
@@ -208,7 +206,7 @@ jobs:
         run: ./scripts/ci/ci_run_airflow_testing.sh
 
   tests-sqlite:
-    timeout-minutes: 60
+    timeout-minutes: 80
     name: "${{matrix.test-type}}:Sqlite Py${{matrix.python-version}}"
     runs-on: ubuntu-latest
     needs: [static-checks-1, static-checks-2, pyfiles]
@@ -238,7 +236,7 @@ jobs:
         run: ./scripts/ci/ci_run_airflow_testing.sh
 
   tests-quarantined:
-    timeout-minutes: 30
+    timeout-minutes: 80
     name: "${{matrix.test-type}}:Pg${{matrix.postgres-version}},Py${{matrix.python-version}}"
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -271,26 +269,31 @@ jobs:
         run: ./scripts/ci/ci_run_airflow_testing.sh
 
   requirements:
-    timeout-minutes: 20
-    name: "Requirements: Py${{ matrix.python-version }}"
+    timeout-minutes: 80
+    name: "Requirements"
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: [2.7, 3.5. 3.6, 3.7]
+      fail-fast: false
     env:
       PYTHON_MAJOR_MINOR_VERSION: ${{ matrix.python-version }}
       SHOW_GENERATE_REQUIREMENTS_INSTRUCTIONS: true
+      UPGRADE_WHILE_GENERATING_REQUIREMENTS: ${{ github.event_name == 'schedule' }}
+      FAIL_WHEN_REQUIREMENTS_UPDATED: ${{ github.event_name != 'schedule' }}
       CI_JOB_TYPE: "Requirements"
     steps:
       - uses: actions/checkout@master
       - uses: actions/setup-python@v1
+      - name: "Free space"
+        run: ./scripts/ci/ci_free_space_on_ci.sh
       - name: "Build CI image ${{ matrix.python-version }}"
         run: ./scripts/ci/ci_prepare_image_on_ci.sh
       - name: "Generate requirements"
         run: ./scripts/ci/ci_generate_requirements.sh
 
   push-prod-images-to-github-cache:
-    timeout-minutes: 60
+    timeout-minutes: 80
     name: "Push PROD images"
     runs-on: ubuntu-latest
     needs:
@@ -300,7 +303,7 @@ jobs:
       - requirements
       - build-prod-image
       - docs
-    if: github.ref == 'refs/heads/master' && github.event_name != 'scheduled'
+    if: github.ref == 'refs/heads/master' && github.event_name != 'schedule'
     strategy:
       matrix:
         python-version: [2.7, 3.5. 3.6, 3.7]
@@ -317,7 +320,7 @@ jobs:
         run: ./scripts/ci/ci_push_production_images.sh
 
   push-ci-images-to-github-cache:
-    timeout-minutes: 60
+    timeout-minutes: 40
     name: "Push CI images"
     runs-on: ubuntu-latest
     needs:
@@ -327,7 +330,7 @@ jobs:
       - requirements
       - build-prod-image
       - docs
-    if: github.ref == 'refs/heads/master' && github.event_name != 'scheduled'
+    if: github.ref == 'refs/heads/master' && github.event_name != 'schedule'
     strategy:
       matrix:
         python-version: [2.7, 3.5. 3.6, 3.7]
